@@ -1,186 +1,160 @@
-// ==========================================
-// Excepción Personalizada del Dominio
-// ==========================================
-class ErrorDominio extends Error {
-  constructor(mensaje) {
-    super(mensaje);
-    this.name = 'ErrorDominio';
-  }
-}
+const express = require('express');
+const app = express();
+app.use(express.json());
 
-// ==========================================
-// 1. PATRÓN FACTORY (Creación de Productos)
-// ==========================================
-class Producto {
-  constructor({ id, nombre, precio, categoria, artesano }) {
-    this.id = id;
-    this.nombre = nombre;
-    this.precio = precio;
-    this.categoria = categoria;
-    this.artesano = artesano;
-  }
-}
-
-const FabricaProducto = {
-  crear(datos, artesano) {
-    if (!artesano) throw new ErrorDominio('El producto debe tener un artesano');
-    
-    // Normaliza «S/ 45,50» a 45.5
-    const precio = Number(
-      String(datos.precio)
-        .replace(/[^\d.,-]/g, '')
-        .replace(',', '.')
-    );
-
-    if (!Number.isFinite(precio) || precio <= 0) {
-      throw new ErrorDominio('Precio inválido');
-    }
-
-    return new Producto({
-      id: datos.id || Date.now(),
-      nombre: datos.nombre,
-      precio: precio,
-      categoria: datos.categoria || 'General',
-      artesano: artesano
-    });
-  }
-};
-
-// ==========================================
-// 2. PATRÓN REPOSITORY (Persistencia)
-// ==========================================
-class RepositorioMemoria {
-  constructor() {
-    this.elementos = [];
-  }
-
-  listar() {
-    return this.elementos;
-  }
-
-  guardar(item) {
-    this.elementos.push(item);
-    return item;
-  }
-}
-
-class RepositorioProductos extends RepositorioMemoria {
-  buscar({ categoria, texto } = {}) {
-    let resultado = this.listar();
-
-    if (categoria && categoria !== 'Todos') {
-      resultado = resultado.filter((p) => p.categoria === categoria);
-    }
-
-    if (texto) {
-      const textoLower = texto.toLowerCase();
-      resultado = resultado.filter((p) =>
-        p.nombre.toLowerCase().includes(textoLower)
-      );
-    }
-
-    return resultado;
-  }
-}
-
-// ==========================================
-// 3. PATRÓN STRATEGY (Procesamiento de Pagos)
-// ==========================================
-class PagoYape {
-  procesar(pedido, datos) {
-    if (!/^\d{6}$/.test(String(datos.codigo))) {
-      throw new ErrorDominio('Código de 6 dígitos');
+// 1. PATRÓN FACTORY
+class FabricaProducto {
+  static crear({ tipo, id, nombre, precio, stock, categoriaId, artesanoId }) {
+    if (!nombre || precio <= 0) {
+      throw new Error('Nombre y precio válido son requeridos.');
     }
     return {
-      aprobado: true,
-      referencia: `YAPE-${datos.codigo}`
+      id: id || Date.now(),
+      tipo,
+      nombre,
+      precio: parseFloat(precio),
+      stock: parseInt(stock, 10) || 0,
+      categoriaId,
+      artesanoId,
+      fechaCreacion: new Date()
     };
   }
 }
 
-class PagoTarjeta {
-  procesar(pedido, datos) {
-    if (!datos.numeroTarjeta || datos.numeroTarjeta.length < 16) {
-      throw new ErrorDominio('Número de tarjeta inválido');
-    }
-    return { aprobado: true, referencia: `TARJETA-${datos.numeroTarjeta.slice(-4)}` };
-  }
-}
-
-class PagoContraEntrega {
-  procesar(pedido, datos) {
-    return { aprobado: true, referencia: `CONTRAENTREGA-${pedido.id}` };
-  }
-}
-
-const ESTRATEGIAS = {
-  yape: new PagoYape(),
-  tarjeta: new PagoTarjeta(),
-  contraentrega: new PagoContraEntrega()
-};
-
-// ==========================================
-// 4. PATRÓN OBSERVER (Publicador de Eventos)
-// ==========================================
+// 2. PATRÓN OBSERVER
 class ServicioNotificaciones {
   constructor() {
-    this.suscriptores = {};
-    this.bitacora = [];
+    this.subscriptores = {};
   }
-
-  suscribir(evento, manejador) {
-    if (!this.suscriptores[evento]) {
-      this.suscriptores[evento] = [];
-    }
-    this.suscriptores[evento].push(manejador);
+  suscribir(evento, callback) {
+    if (!this.subscriptores[evento]) this.subscriptores[evento] = [];
+    this.subscriptores[evento].push(callback);
   }
-
   publicar(evento, datos) {
-    this.bitacora.unshift({ evento, datos });
-    const manejadores = this.suscriptores[evento] || [];
-    for (const manejador of manejadores) {
-      manejador(datos); // notifica a cada observador
+    if (this.subscriptores[evento]) {
+      this.subscriptores[evento].forEach(cb => cb(datos));
     }
   }
 }
 
-// ==========================================
-// DEMOSTRACIÓN INTEGRADA DE LOS 4 PATRONES
-// ==========================================
-console.log('=== 1. Probando Factory ===');
-const producto1 = FabricaProducto.crear(
-  { id: 1, nombre: 'Cerámica Chulucanas', precio: 'S/ 45,50', categoria: 'Artesanía' },
-  'Juan Pérez'
-);
-console.log('Producto creado exitosamente:', producto1);
-
-console.log('\n=== 2. Probando Repository ===');
-const repo = new RepositorioProductos();
-repo.guardar(producto1);
-repo.guardar(FabricaProducto.crear(
-  { id: 2, nombre: 'Retablo Ayacuchano', precio: '120.00', categoria: 'Artesanía' },
-  'Maria Quispe'
-));
-console.log('Búsqueda por categoría Artesanía:', repo.buscar({ categoria: 'Artesanía' }));
-
-console.log('\n=== 3. Probando Strategy ===');
-const pedidoEjemplo = { id: 101, total: 45.50 };
-const metodoPago = 'yape';
-const datosPago = { codigo: '123456' };
-
-const resultadoPago = ESTRATEGIAS[metodoPago].procesar(pedidoEjemplo, datosPago);
-console.log('Resultado del pago:', resultadoPago);
-
-console.log('\n=== 4. Probando Observer ===');
 const buscadorEventos = new ServicioNotificaciones();
+const bitacoraEventos = [];
 
-// Suscribimos observadores
 buscadorEventos.suscribir('pedidoCreado', (datos) => {
-  console.log(`[Email enviado]: Nuevo pedido registrado #${datos.id}`);
-});
-buscadorEventos.suscribir('pedidoCreado', (datos) => {
-  console.log(`[Log Bitácora]: Guardando pedido #${datos.id} en auditoría.`);
+  bitacoraEventos.push({ evento: 'pedidoCreado', datos, fecha: new Date() });
 });
 
-// Publicamos el evento
-buscadorEventos.publicar('pedidoCreado', { id: 101, cliente: 'Carlos' });
+buscadorEventos.suscribir('pagoProcesado', (datos) => {
+  bitacoraEventos.push({ evento: 'pagoProcesado', datos, fecha: new Date() });
+});
+
+// 3. PATRÓN REPOSITORY
+class RepositorioMemoria {
+  constructor() {
+    this.categorias = ['Cerámica', 'Textil', 'Joyería', 'Artesanía'];
+    this.artesanos = [
+      { id: 1, nombre: 'Artesanos del Valle' },
+      { id: 2, nombre: 'Taller San Pedro' }
+    ];
+    this.productos = [];
+    this.pedidos = [];
+  }
+  guardarProducto(producto) {
+    this.productos.push(producto);
+    return producto;
+  }
+  buscarProductos({ categoria, q }) {
+    return this.productos.filter(p => {
+      const coincideCat = categoria ? p.categoriaId === categoria : true;
+      const coincideQ = q ? p.nombre.toLowerCase().includes(q.toLowerCase()) : true;
+      return coincideCat && coincideQ;
+    });
+  }
+  guardarPedido(pedido) {
+    this.pedidos.unshift(pedido);
+    return pedido;
+  }
+  buscarPedidoPorId(id) {
+    return this.pedidos.find(p => p.id === Number(id));
+  }
+}
+
+const db = new RepositorioMemoria();
+
+// 4. PATRÓN STRATEGY
+const ESTRATEGIAS = {
+  yape: {
+    camposRequeridos: ['codigo'],
+    procesar: (pedido, datos) => {
+      if (!datos.codigo) throw new Error('Código Yape es requerido.');
+      return { exito: true, metodo: 'Yape', transaccionId: `YAPE-${Date.now()}` };
+    }
+  },
+  tarjeta: {
+    camposRequeridos: ['numeroTarjeta', 'cvv'],
+    procesar: (pedido, datos) => {
+      if (!datos.numeroTarjeta || !datos.cvv) throw new Error('Datos de tarjeta incompletos.');
+      return { exito: true, metodo: 'Tarjeta', transaccionId: `CARD-${Date.now()}` };
+    }
+  }
+};
+
+// RUTAS API REST
+app.get('/api/categorias', (req, res) => res.status(200).json(db.categorias));
+app.get('/api/artesanos', (req, res) => res.status(200).json(db.artesanos));
+app.get('/api/productos', (req, res) => {
+  const { categoria, q } = req.query;
+  res.status(200).json(db.buscarProductos({ categoria, q }));
+});
+app.post('/api/productos', (req, res) => {
+  try {
+    const nuevo = FabricaProducto.crear(req.body);
+    res.status(201).json(db.guardarProducto(nuevo));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.get('/api/metodos-pago', (req, res) => {
+  const metodos = Object.keys(ESTRATEGIAS).map(k => ({ metodo: k, campos: ESTRATEGIAS[k].camposRequeridos }));
+  res.status(200).json(metodos);
+});
+app.post('/api/pedidos', (req, res) => {
+  try {
+    const { items, cliente } = req.body;
+    if (!items || items.length === 0) return res.status(400).json({ error: 'El carrito no puede estar vacío' });
+    const nuevoPedido = {
+      id: Date.now(),
+      cliente: cliente || 'Anónimo',
+      items,
+      estado: 'PENDIENTE',
+      total: items.reduce((acc, item) => acc + (item.precio * item.cantidad), 0),
+      fecha: new Date()
+    };
+    db.guardarPedido(nuevoPedido);
+    buscadorEventos.publicar('pedidoCreado', nuevoPedido);
+    res.status(201).json(nuevoPedido);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.post('/api/pedidos/:id/pago', (req, res) => {
+  try {
+    const pedido = db.buscarPedidoPorId(req.params.id);
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    const { metodoPago, datosPago } = req.body;
+    const estrategia = ESTRATEGIAS[metodoPago];
+    if (!estrategia) return res.status(400).json({ error: 'Método de pago no válido' });
+    
+    const resultadoPago = estrategia.procesar(pedido, datosPago);
+    pedido.estado = 'PAGADO';
+    buscadorEventos.publicar('pagoProcesado', { pedidoId: pedido.id, resultadoPago });
+    res.status(200).json({ mensaje: 'Pago realizado con éxito', detalles: resultadoPago });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.get('/api/pedidos', (req, res) => res.status(200).json(db.pedidos));
+app.get('/api/eventos', (req, res) => res.status(200).json(bitacoraEventos));
+
+const PORT = 3000;
+app.listen(PORT, () => console.log(`Servidor API REST corriendo en http://localhost:${PORT}`));
