@@ -1,0 +1,26 @@
+### 1. Crear Producto (Patrón Factory)
+POST http://localhost:3000/api/productos
+Content-Type: application/json
+
+{
+  "tipo": "Físico",
+  "nombre": "Poncho Andino",
+  "precio": 150.00,
+  "stock": 10,
+  "categoriaId": "Textil",
+  "artesanoId": 1
+}
+
+### 2. Listar Productos (Patrón Repository)
+GET http://localhost:3000/api/productos
+
+### 3. Crear Pedido (Patrón Observer)
+POST http://localhost:3000/api/pedidos
+Content-Type: application/json
+
+{
+  "cliente": "Carlos Perez",
+  "items": [
+    { "nombre": "Poncho Andino", "precio": 150, "cantidad": 2 }
+  ]
+}
